@@ -15,11 +15,13 @@
  */
 package com.example.android.soonami;
 
-import android.os.AsyncTask;
+import android.annotation.SuppressLint;
 import android.os.Bundle;
-import android.support.v7.app.AppCompatActivity;
 import android.util.Log;
 import android.widget.TextView;
+
+import androidx.annotation.Nullable;
+import androidx.appcompat.app.AppCompatActivity;
 
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -32,18 +34,28 @@ import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
+import java.util.concurrent.Callable;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.FutureTask;
 
 /**
  * Displays information about a single earthquake.
  */
+@SuppressLint("SimpleDateFormat")
 public class MainActivity extends AppCompatActivity {
 
-    /** Tag for the log messages */
+    /**
+     * Tag for the log messages
+     */
     public static final String LOG_TAG = MainActivity.class.getSimpleName();
 
-    /** URL to query the USGS dataset for earthquake information */
+    /**
+     * URL to query the USGS dataset for earthquake information
+     */
     private static final String USGS_REQUEST_URL =
             "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2012-01-01&endtime=2012-12-01&minmagnitude=6";
 
@@ -52,9 +64,16 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
 
-        // Kick off an {@link AsyncTask} to perform the network request
-        TsunamiAsyncTask task = new TsunamiAsyncTask();
-        task.execute();
+        FutureTask<Event> task = new FutureTask<>(new ThreadTemplate());
+        ExecutorService executor = Executors.newSingleThreadExecutor();
+        executor.execute(task);
+        try {
+            updateUi(task.get());
+        } catch (ExecutionException err) {
+            Log.d(LOG_TAG, "Task Execution Exception!", err);
+        } catch (InterruptedException err) {
+            Log.d(LOG_TAG, "Task Interrupted!", err);
+        }
     }
 
     /**
@@ -62,15 +81,15 @@ public class MainActivity extends AppCompatActivity {
      */
     private void updateUi(Event earthquake) {
         // Display the earthquake title in the UI
-        TextView titleTextView = (TextView) findViewById(R.id.title);
+        TextView titleTextView = findViewById(R.id.title);
         titleTextView.setText(earthquake.title);
 
         // Display the earthquake date in the UI
-        TextView dateTextView = (TextView) findViewById(R.id.date);
+        TextView dateTextView = findViewById(R.id.date);
         dateTextView.setText(getDateString(earthquake.time));
 
         // Display whether or not there was a tsunami alert in the UI
-        TextView tsunamiTextView = (TextView) findViewById(R.id.tsunami_alert);
+        TextView tsunamiTextView = findViewById(R.id.tsunami_alert);
         tsunamiTextView.setText(getTsunamiAlertString(earthquake.tsunamiAlert));
     }
 
@@ -96,17 +115,15 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    /**
-     * {@link AsyncTask} to perform the network request on a background thread, and then
-     * update the UI with the first earthquake in the response.
-     */
-    private class TsunamiAsyncTask extends AsyncTask<URL, Void, Event> {
+    public static class ThreadTemplate implements Callable<Event> {
+        private final URL url = createUrl();
 
-        @Override
-        protected Event doInBackground(URL... urls) {
-            // Create URL object
-            URL url = createUrl(USGS_REQUEST_URL);
+        public ThreadTemplate() {
+            Log.d("ThreadTemplate", "Thread made.");
+        }
 
+
+        public Event call() {
             // Perform HTTP request to the URL and receive a JSON response back
             String jsonResponse = "";
             try {
@@ -116,32 +133,21 @@ public class MainActivity extends AppCompatActivity {
             }
 
             // Extract relevant fields from the JSON response and create an {@link Event} object
-            Event earthquake = extractFeatureFromJson(jsonResponse);
 
             // Return the {@link Event} object as the result fo the {@link TsunamiAsyncTask}
-            return earthquake;
+            Log.d("ThreadTemplate", "Thread Done.");
+            return extractFeatureFromJson(jsonResponse);
         }
 
-        /**
-         * Update the screen with the given earthquake (which was the result of the
-         * {@link TsunamiAsyncTask}).
-         */
-        @Override
-        protected void onPostExecute(Event earthquake) {
-            if (earthquake == null) {
-                return;
-            }
-
-            updateUi(earthquake);
-        }
 
         /**
          * Returns new URL object from the given string URL.
          */
-        private URL createUrl(String stringUrl) {
-            URL url = null;
+        @Nullable
+        private URL createUrl() {
+            URL url;
             try {
-                url = new URL(stringUrl);
+                url = new URL(USGS_REQUEST_URL);
             } catch (MalformedURLException exception) {
                 Log.e(LOG_TAG, "Error with creating URL", exception);
                 return null;
@@ -178,14 +184,10 @@ public class MainActivity extends AppCompatActivity {
             return jsonResponse;
         }
 
-        /**
-         * Convert the {@link InputStream} into a String which contains the
-         * whole JSON response from the server.
-         */
         private String readFromStream(InputStream inputStream) throws IOException {
             StringBuilder output = new StringBuilder();
             if (inputStream != null) {
-                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, Charset.forName("UTF-8"));
+                InputStreamReader inputStreamReader = new InputStreamReader(inputStream, StandardCharsets.UTF_8);
                 BufferedReader reader = new BufferedReader(inputStreamReader);
                 String line = reader.readLine();
                 while (line != null) {
@@ -217,6 +219,7 @@ public class MainActivity extends AppCompatActivity {
                     int tsunamiAlert = properties.getInt("tsunami");
 
                     // Create a new {@link Event} object
+                    Log.d("ThreadTemplate", "Event title: " + title + ", Time: " + time + ", Alert: " + tsunamiAlert);
                     return new Event(title, time, tsunamiAlert);
                 }
             } catch (JSONException e) {

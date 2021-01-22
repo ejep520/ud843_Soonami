@@ -54,7 +54,8 @@
         android:paddingTop="16dp"
         android:text="@string/header_tsunami_alert"
         android:textAllCaps="true"
-        android:textAppearance="?android:textAppearanceSmall" />
+        android:textAppearance="?android:textAppearanceSmall"
+        tools:text="Maybe."/>
 
     <TextView
         android:id="@+id/tsunami_alert"
