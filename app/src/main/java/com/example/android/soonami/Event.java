@@ -16,7 +16,7 @@
 package com.example.android.soonami;
 
 /**
- * {@Event} represents an earthquake event. It holds the details
+ * Event represents an earthquake event. It holds the details
  * of that event such as title (which contains magnitude and location
  * of the earthquake), as well as time, and whether or not a tsunami
  * alert was issued during the earthquake.
@@ -32,6 +32,11 @@ public class Event {
     /** Whether or not a tsunami alert was issued (1 if it was issued, 0 if no alert was issued) */
     public final int tsunamiAlert;
 
+    public Event() {
+        title = "";
+        time = 0L;
+        tsunamiAlert = 2;
+    }
     /**
      * Constructs a new {@link Event}.
      *

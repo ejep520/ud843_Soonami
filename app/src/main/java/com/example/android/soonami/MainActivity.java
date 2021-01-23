@@ -17,9 +17,11 @@ package com.example.android.soonami;
 
 import android.annotation.SuppressLint;
 import android.os.Bundle;
+import android.text.TextUtils;
 import android.util.Log;
 import android.widget.TextView;
 
+import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.appcompat.app.AppCompatActivity;
 
@@ -33,6 +35,7 @@ import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
+import java.net.ProtocolException;
 import java.net.URL;
 import java.nio.charset.StandardCharsets;
 import java.text.SimpleDateFormat;
@@ -56,8 +59,11 @@ public class MainActivity extends AppCompatActivity {
     /**
      * URL to query the USGS dataset for earthquake information
      */
-    private static final String USGS_REQUEST_URL =
-            "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2012-01-01&endtime=2012-12-01&minmagnitude=6";
+    // private static final String USGS_REQUEST_URL = "https://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2012-01-01&endtime=2012-12-01&minmagnitude=6";
+    // URL #2
+    private static final String USGS_REQUEST_URL = "http://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2014-01-01&endtime=2014-12-01&minmagnitude=7";
+    // Known bad URL
+    // private static final String USGS_REQUEST_URL = "http://earthquake.usgs.gov/fdsnws/event/1/query?format=geojson&starttime=2014-01-01&endtime=2014-01-02asdfasdf";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -123,15 +129,16 @@ public class MainActivity extends AppCompatActivity {
         }
 
 
-        public Event call() {
+        public Event call() throws IOException {
             // Perform HTTP request to the URL and receive a JSON response back
             String jsonResponse = "";
-            try {
-                jsonResponse = makeHttpRequest(url);
-            } catch (IOException e) {
-                // TODO Handle the IOException
+            if (url != null) {
+                try { jsonResponse = makeHttpRequest(url); }
+                catch (IOException e) {
+                    e.printStackTrace();
+                    throw e;
+                }
             }
-
             // Extract relevant fields from the JSON response and create an {@link Event} object
 
             // Return the {@link Event} object as the result fo the {@link TsunamiAsyncTask}
@@ -158,28 +165,42 @@ public class MainActivity extends AppCompatActivity {
         /**
          * Make an HTTP request to the given URL and return a String as the response.
          */
-        private String makeHttpRequest(URL url) throws IOException {
+        private String makeHttpRequest(@NonNull URL url) throws IOException {
             String jsonResponse = "";
-            HttpURLConnection urlConnection = null;
+            HttpURLConnection urlConnection;
             InputStream inputStream = null;
-            try {
-                urlConnection = (HttpURLConnection) url.openConnection();
-                urlConnection.setRequestMethod("GET");
-                urlConnection.setReadTimeout(10000 /* milliseconds */);
-                urlConnection.setConnectTimeout(15000 /* milliseconds */);
-                urlConnection.connect();
-                inputStream = urlConnection.getInputStream();
-                jsonResponse = readFromStream(inputStream);
-            } catch (IOException e) {
-                // TODO: Handle the exception
-            } finally {
-                if (urlConnection != null) {
+            int returnCode;
+            URL useURL;
+            if (url.getProtocol().equals("http")) {
+                useURL = new URL("https" + url.toString().substring(4));
+            } else {
+                useURL = url;
+            }
+            urlConnection = (HttpURLConnection) useURL.openConnection();
+            urlConnection.setRequestMethod("GET");
+            urlConnection.setReadTimeout(10000 /* milliseconds */);
+            urlConnection.setConnectTimeout(15000 /* milliseconds */);
+            urlConnection.setInstanceFollowRedirects(true);
+            try { urlConnection.connect(); }
+            catch(IOException e) {
+                e.printStackTrace();
+                Log.d(LOG_TAG, "IO exception encountered!!", e);
+            }
+            returnCode = urlConnection.getResponseCode();
+            if (returnCode == 200) {
+                try {
+                    inputStream = urlConnection.getInputStream();
+                    jsonResponse = readFromStream(inputStream);
+                } finally {
+                    if (inputStream != null) {
+                        // function must handle java.io.IOException here
+                        inputStream.close();
+                    }
                     urlConnection.disconnect();
                 }
-                if (inputStream != null) {
-                    // function must handle java.io.IOException here
-                    inputStream.close();
-                }
+            } else if (returnCode == 400) {
+                Log.d(LOG_TAG, "HTTP400 error returned. Malformed request.");
+                urlConnection.disconnect();
             }
             return jsonResponse;
         }
@@ -203,6 +224,9 @@ public class MainActivity extends AppCompatActivity {
          * about the first earthquake from the input earthquakeJSON string.
          */
         private Event extractFeatureFromJson(String earthquakeJSON) {
+            if (TextUtils.isEmpty(earthquakeJSON)) {
+                return new Event();
+            }
             try {
                 JSONObject baseJsonResponse = new JSONObject(earthquakeJSON);
                 JSONArray featureArray = baseJsonResponse.getJSONArray("features");
